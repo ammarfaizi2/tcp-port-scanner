@@ -24,7 +24,7 @@ Usage: ./scanner [options]
     -h|--host <host>	Target host (IPv4)
     -v|--verbose	Verbose output (use more -v to increase verbose level)
     -r|--recv-timeout	recv(2) timeout (default: 5)
-    -s|--send-timeout	send(2) timeout (default: 5)
+    -s|--send-timeout	send(2) timeout, this affects connect(2) too (default: 5)
 ```
 
 # Example Usage
