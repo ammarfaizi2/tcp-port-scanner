@@ -72,6 +72,7 @@ static bool socket_connect(int net_fd,
   char *target_host, uint16_t target_port,
   int *out_errno);
 static void write_report(char *report_data);
+static size_t set_http_payload(char *buffer);
 
 
 /**
@@ -305,6 +306,25 @@ static void write_report(char *report_data)
 
 
 /**
+ * @param char *buffer
+ * @return size_t
+ */
+static size_t set_http_payload(char *buffer)
+{
+  #define HTTP_PAYLOAD \
+    "GET / HTTP/1.1\r\n" \
+    "Host: example.com\r\n" \
+    "Accept: */*\r\n\r\n"
+
+  memcpy(buffer, HTTP_PAYLOAD, sizeof(HTTP_PAYLOAD) - 1);
+
+  return sizeof(HTTP_PAYLOAD) - 1;
+
+  #undef HTTP_PAYLOAD
+}
+
+
+/**
  * @param thread_job *job
  * @return void *
  */
@@ -316,6 +336,8 @@ void *thread_handler(thread_job *job)
   bool is_error;
   bool is_port_open;
   uint8_t try_count;
+  size_t sock_buflen;
+  char sock_buffer[1024];
   char _report_data[1024];
   char *report_data = &(_report_data[0]);
 
@@ -334,12 +356,29 @@ thread_try:
 
   msg_log(2, "Initializing TCP socket...\n");
   net_fd = socket_init();
-  if (net_fd < 0) goto ret;
+  if (net_fd < 0) {
+    report_data += sprintf(report_data, "|socket_init:failed");
+    goto ret;
+  }
 
   if (socket_connect(net_fd, job->target_host, job->target_port, &out_errno)) {
+
     report_data += sprintf(report_data, "|connect_ok");
     msg_log(3, "Connect OK\n");
+
+    sock_buflen = set_http_payload(sock_buffer);
+    ret_val = send(net_fd, sock_buffer, sock_buflen, 0);
+    report_data += sprintf(report_data, "|send:%d", ret_val);
+    if (ret_val < 0) {
+      goto close_ret;
+    }
+
+    ret_val = recv(net_fd, sock_buffer, 1024, 0);
+    report_data += sprintf(report_data, "|recv:%d", ret_val);
+    printf("recv_buffer: \"%s\"\n", sock_buffer);
   } else {
+
+    report_data += sprintf(report_data, "|errno:%d", out_errno);
 
     switch (out_errno) {
       /*
