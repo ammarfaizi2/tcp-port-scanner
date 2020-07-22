@@ -23,7 +23,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 
-#define SOCKET_ERROR_TRY      3
+#define SOCKET_ERROR_TRY      0
 #define THREAD_WAIT_SLEEP     1
 #define DEFAULT_THREAD_NUM    1
 #define DEFAULT_SEND_TIMEOUT  5
@@ -71,6 +71,7 @@ static int socket_init();
 static bool socket_connect(int net_fd,
   char *target_host, uint16_t target_port,
   int *out_errno);
+static void write_report(char *report_data);
 
 
 /**
@@ -291,6 +292,19 @@ uint16_t get_non_busy_thread(
 
 
 /**
+ * @param char *report_data
+ * @return void
+ */
+static void write_report(char *report_data)
+{
+  pthread_mutex_lock(&lock_write_report);
+  fprintf(report_handle, "%s\n", report_data);
+  fflush(report_handle);
+  pthread_mutex_unlock(&lock_write_report);
+}
+
+
+/**
  * @param thread_job *job
  * @return void *
  */
@@ -302,11 +316,16 @@ void *thread_handler(thread_job *job)
   bool is_error;
   bool is_port_open;
   uint8_t try_count;
-
+  char _report_data[1024];
+  char *report_data = &(_report_data[0]);
 
   try_count = 0;
 
 thread_try:
+
+  report_data += 
+    sprintf(report_data, "%05d|%s:%d", job->target_port,
+      job->target_host, job->target_port);
 
   try_count++;
   is_error = false;
@@ -318,7 +337,8 @@ thread_try:
   if (net_fd < 0) goto ret;
 
   if (socket_connect(net_fd, job->target_host, job->target_port, &out_errno)) {
-    msg_log(3, "Connect OK");
+    report_data += sprintf(report_data, "|connect_ok");
+    msg_log(3, "Connect OK\n");
   } else {
 
     switch (out_errno) {
@@ -327,6 +347,7 @@ thread_try:
        */
       case ECONNREFUSED: /* Connection refused. */
         msg_log(3, "ECONNREFUSED\n");
+        report_data += sprintf(report_data, "|may_not_be_firewalled|ECONNREFUSED");
         is_port_open = true;
         break;
 
@@ -334,35 +355,55 @@ thread_try:
        * The port may be DROPPED by the firewall.
        */
       case EINPROGRESS:
-      case ETIMEDOUT: /* Connection timedout. */
+        report_data += sprintf(report_data, "|firewall_det|EINPROGRESS");
         msg_log(3, "ETIMEDOUT\n");
+        break;
+      case ETIMEDOUT: /* Connection timedout. */
+        report_data += sprintf(report_data, "|firewall_det|ETIMEDOUT");
+        msg_log(3, "ETIMEDOUT\n");
+        break;
 
       /*
        * Error client.
        */
       case ENETUNREACH: /* Network unreachable. */
+        report_data += sprintf(report_data, "|ENETUNREACH");
         msg_log(3, "ENETUNREACH\n");
+        is_error = true;
+        break;
       case EINTR: /* Interrupted. */
+        report_data += sprintf(report_data, "|EINTR");
         msg_log(3, "EINTR\n");
+        is_error = true;
+        break;
       case EFAULT: /* Fault. */
+        report_data += sprintf(report_data, "|EFAULT");
         msg_log(3, "EFAULT\n");
+        is_error = true;
+        break;
       case EBADF: /* Invalid sockfd. */
+        report_data += sprintf(report_data, "|EBADF");
         msg_log(3, "EBADF\n");
+        is_error = true;
+        break;
       case ENOTSOCK: /* sockfd is not a socket file descriptor. */
+        report_data += sprintf(report_data, "|ENOTSOCK");
         msg_log(3, "ENOTSOCK\n");
+        is_error = true;
+        break;
       case EPROTOTYPE: /* Socket does not support the protocol. */
+        report_data += sprintf(report_data, "|EPROTOTYPE");
         msg_log(3, "EPROTOTYPE\n");
+        is_error = true;
+        break;
       default:
+        report_data += sprintf(report_data, "|unknown_error");
         msg_log(3, "default ERR\n");
         is_error = true;
         break;
     }
   }
 
-  pthread_mutex_lock(&lock_write_report);
-  fprintf(report_handle, "%s:%d\n", job->target_host, job->target_port);
-  fflush(report_handle);
-  pthread_mutex_unlock(&lock_write_report);
 close_ret:
   
   if (net_fd > -1) {
@@ -375,6 +416,8 @@ ret:
     msg_log(1, "Retrying... (%d)\n", try_count);
     goto thread_try;
   }
+
+  write_report(_report_data);
 
   /* Clean up all job. */
   memset(job, '\0', sizeof(thread_job));
