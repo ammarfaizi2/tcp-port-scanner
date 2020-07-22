@@ -34,7 +34,7 @@ Usage: ./scanner [options]
 
 
 # Check the reports
-cd reports/157.240.13.35/000_reports.txt | sort;
+cd reports/157.240.13.35/000_report.txt | sort;
 ```
 
 # License
