@@ -1,6 +1,13 @@
 
 # TCP Port Scanner
+Reliable multithreaded TCP port scanner.
 
+# How does it work?
+This scanner will try to call `connect(2)` to the target host. If the scanner gets `ECONNREFUSED`, it is probably the target port is not blocked by the firewall, there is just no service is bound to the such port.
+
+If the connect success, the scanner will try to send some payload and check whether there is a response from the destination port.
+
+All necessary information will be stored in directory with name target host. If the directory does not exist, the scanner will create it automatically.
 
 # Installation
 ```sh
