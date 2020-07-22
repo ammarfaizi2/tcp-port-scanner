@@ -28,10 +28,14 @@ Usage: ./scanner [options]
 ```
 
 # Example Usage
-```
+```sh
+# It will create directory with name "reports/157.240.13.35"
 ./scanner -h 157.240.13.35 -t 4 -r 10 -s 10 -vvv
 
-# It will create directory with name "157.240.13.35"
+
+# Check the reports
+cd reports/157.240.13.35;
+cat 000_reports.txt | sort;
 ```
 
 # License
