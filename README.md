@@ -5,9 +5,9 @@ Reliable multithreaded TCP port scanner.
 # How does it work?
 This scanner will enumerate the target host's port. The scanner will call connect(2) to the target host with the port start from port 1 to 65535.
 
-If the scanner gets `ERRCONNREFUSED` then, we assume that the target port is not behind the firewalled environment, in the general case, this condition occurs when there is no service that binds to such port.
+If the scanner gets `ECONNREFUSED` then, we assume that the target port is not behind the firewalled environment, in the general case, this condition occurs when there is no service that binds to such port.
 
-If the scanner gets `EINPROGRESS` or `ERRTIMEDOUT` then, it means the scanner has reached its time limit (can be set in parameter). In the general case, this condition occurs when the target host is dropping our packet, so we assume that the port is behind a firewalled environment.
+If the scanner gets `EINPROGRESS` or `ETIMEDOUT` then, it means the scanner has reached its time limit (can be set in parameter). In the general case, this condition occurs when the target host is dropping our packet, so we assume that the port is behind a firewalled environment.
 
 # Installation
 ```sh
