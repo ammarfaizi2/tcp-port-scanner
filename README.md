@@ -20,7 +20,7 @@ make;
 ```
 Usage: ./scanner [options]
   Options:
-    -t|--threads <num>	Number of threads (default: 1)
+    -t|--threads <num>	Number of threads (default: 8)
     -h|--host <host>	Target host (IPv4)
     -v|--verbose	Verbose output (use more -v to increase verbose level)
     -r|--recv-timeout	recv(2) timeout (default: 5)

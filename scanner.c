@@ -25,7 +25,7 @@
 
 #define SOCKET_ERROR_TRY      0
 #define THREAD_WAIT_SLEEP     1
-#define DEFAULT_THREAD_NUM    1
+#define DEFAULT_THREAD_NUM    8
 #define DEFAULT_SEND_TIMEOUT  5
 #define DEFAULT_RECV_TIMEOUT  5
 #define msg_log(LVL, ...) \
