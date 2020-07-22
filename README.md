@@ -7,7 +7,7 @@ This scanner will try to call `connect(2)` to the target host. If the scanner ge
 
 If the connect success, the scanner will try to send some payload and check whether there is a response from the destination port.
 
-All necessary information will be stored in directory with name target host. If the directory does not exist, the scanner will create it automatically.
+All necessary information will be stored in directory `reports`. If the directory does not exist, the scanner will create it automatically.
 
 # Installation
 ```sh

@@ -19,6 +19,8 @@
 #include <stdbool.h>
 #include <pthread.h>
 #include <arpa/inet.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/socket.h>
 
 #define SOCKET_ERROR_TRY      3
@@ -51,9 +53,11 @@ const static struct option long_options[] = {
   {0, 0, 0, 0}
 };
 
+FILE *report_handle;
 uint8_t verbose_level = 0;
-int16_t recv_timeout  = -1;
-int16_t send_timeout  = -1;
+int16_t recv_timeout  = DEFAULT_RECV_TIMEOUT;
+int16_t send_timeout  = DEFAULT_SEND_TIMEOUT;
+pthread_mutex_t lock_write_report = PTHREAD_MUTEX_INITIALIZER;
 
 void usage(char *app);
 void do_scan(scanner_config *config);
@@ -102,7 +106,7 @@ void usage(char *app)
   printf("    -h|--host <host>\tTarget host (IPv4)\n");
   printf("    -v|--verbose\tVerbose output (use more -v to increase verbose level)\n");
   printf("    -r|--recv-timeout\trecv(2) timeout (default: %d)\n", DEFAULT_RECV_TIMEOUT);
-  printf("    -s|--send-timeout\tsend(2) timeout (default: %d)\n", DEFAULT_SEND_TIMEOUT);
+  printf("    -s|--send-timeout\tsend(2) timeout, this affects connect(2) too (default: %d)\n", DEFAULT_SEND_TIMEOUT);
 }
 
 
@@ -182,7 +186,9 @@ bool parse_argv(int argc, char *argv[], scanner_config *config)
 void do_scan(scanner_config *config)
 {
   thread_job *jobs;
-  uint16_t free_thread;
+  struct stat dirst;
+  char report_file[128];
+  uint16_t free_thread, i;
 
   msg_log(2, "Allocating thread jobs for %d threads...\n", config->num_thread);
 
@@ -190,7 +196,38 @@ void do_scan(scanner_config *config)
 
   memset(jobs, '\0', sizeof(thread_job) * (config->num_thread + 1));
 
-  for (uint16_t i = 1; i < 65535; i++) {
+  if (stat("reports", &dirst) < 0) {
+    if (
+      (mkdir("reports", 0700) < 0) ||
+      (stat("reports", &dirst) < 0)
+    ) {
+      perror("mkdir");
+      printf("Cannot create directory ./reports\n");
+      exit(1);
+    }
+  }
+
+  if ((dirst.st_mode & S_IFMT) != S_IFDIR) {
+    printf("Cannot create directory ./reports\n");
+    exit(1);
+  }
+
+  sprintf(report_file, "reports/%s", config->target_host);
+  if (stat(report_file, &dirst) < 0) {
+    if (
+      (mkdir(report_file, 0700) < 0) ||
+      (stat(report_file, &dirst) < 0)
+    ) {
+      perror("mkdir");
+      printf("Cannot create directory ./%s\n", report_file);
+      exit(1);
+    }
+  }
+
+  sprintf(report_file, "reports/%s/000_report.txt", config->target_host);
+  report_handle = fopen(report_file, "w");
+
+  for (i = 1; i < 65535; i++) {
 
     free_thread = (uint16_t)get_non_busy_thread(jobs, config->num_thread);
 
@@ -204,8 +241,21 @@ void do_scan(scanner_config *config)
     pthread_detach(jobs[free_thread].thread);
   }
 
+  bool has_busy_thread = false;
+  do {
+    for (i = 0; i < config->num_thread; i++) {
+      if (jobs[i].is_busy) {
+        has_busy_thread = true;
+        break;
+      }
+    }
+    msg_log(1, "Waiting for the last jobs...\n");
+    sleep(THREAD_WAIT_SLEEP);
+  } while (has_busy_thread);
+
 
   free(jobs);
+  fclose(report_handle);
 }
 
 
@@ -226,7 +276,6 @@ uint16_t get_non_busy_thread(
 
   check_threads:
   for (i = 0; i < num_thread; i++) {
-    printf("%d\n", jobs[i].is_busy);
     if (!jobs[i].is_busy) {
       return (int32_t)i;
     }
@@ -235,8 +284,8 @@ uint16_t get_non_busy_thread(
 
   if (counter % 5 == 0) {
     msg_log(3, "(%d) All threads all busy...\n", counter);
-    sleep(THREAD_WAIT_SLEEP); 
   }
+  sleep(THREAD_WAIT_SLEEP);
   goto check_threads;
 }
 
@@ -269,36 +318,51 @@ thread_try:
   if (net_fd < 0) goto ret;
 
   if (socket_connect(net_fd, job->target_host, job->target_port, &out_errno)) {
-
+    msg_log(3, "Connect OK");
   } else {
 
-    switch (ret_val) {
+    switch (out_errno) {
       /*
        * The port may not be DROPPED by the firewall.
        */
       case ECONNREFUSED: /* Connection refused. */
+        msg_log(3, "ECONNREFUSED\n");
         is_port_open = true;
         break;
 
       /*
        * The port may be DROPPED by the firewall.
        */
+      case EINPROGRESS:
       case ETIMEDOUT: /* Connection timedout. */
+        msg_log(3, "ETIMEDOUT\n");
 
       /*
        * Error client.
        */
       case ENETUNREACH: /* Network unreachable. */
+        msg_log(3, "ENETUNREACH\n");
       case EINTR: /* Interrupted. */
+        msg_log(3, "EINTR\n");
       case EFAULT: /* Fault. */
+        msg_log(3, "EFAULT\n");
       case EBADF: /* Invalid sockfd. */
+        msg_log(3, "EBADF\n");
       case ENOTSOCK: /* sockfd is not a socket file descriptor. */
+        msg_log(3, "ENOTSOCK\n");
       case EPROTOTYPE: /* Socket does not support the protocol. */
+        msg_log(3, "EPROTOTYPE\n");
+      default:
+        msg_log(3, "default ERR\n");
         is_error = true;
         break;
     }
   }
 
+  pthread_mutex_lock(&lock_write_report);
+  fprintf(report_handle, "%s:%d\n", job->target_host, job->target_port);
+  fflush(report_handle);
+  pthread_mutex_unlock(&lock_write_report);
 close_ret:
   
   if (net_fd > -1) {
@@ -344,7 +408,7 @@ static int socket_init()
 
   timeout.tv_sec = send_timeout;
   timeout.tv_usec = 0;
-  if (setsockopt(net_fd, SOL_SOCKET, SO_RCVTIMEO,
+  if (setsockopt(net_fd, SOL_SOCKET, SO_SNDTIMEO,
         (char *)&timeout, sizeof(timeout)) < 0
   ) {
     perror("setsockopt");
@@ -386,8 +450,10 @@ static bool socket_connect(int net_fd,
   if (connect(net_fd, (struct sockaddr *)&(server_addr),
     sizeof(struct sockaddr_in)) < 0) {
     *out_errno = errno;
+    perror("connect");
     return false;
   }
+  msg_log(1, "Connection established %s:%d\n", target_host, target_port);
 
   return true;
 }
