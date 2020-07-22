@@ -30,6 +30,8 @@ Usage: ./scanner [options]
 # Example Usage
 ```
 ./scanner -h 157.240.13.35 -t 4 -r 10 -s 10 -vvv
+
+# It will create directory with name "157.240.13.35"
 ```
 
 # License
