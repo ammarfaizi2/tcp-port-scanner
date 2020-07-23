@@ -279,7 +279,7 @@ uint16_t get_non_busy_thread(
   check_threads:
   for (i = 0; i < num_thread; i++) {
     if (!jobs[i].is_busy) {
-      return (int32_t)i;
+      return i;
     }
   }
   counter++;
